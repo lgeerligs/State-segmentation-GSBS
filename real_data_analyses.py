@@ -515,14 +515,14 @@ def optimalK(roilist, savedir, kfold, CV=False, type='GS', radius=8):
     return optimum
 
 #relation to behavioral event boundaries
-def relate_events(HMMresults, GSresults):
+def relate_events(HMMresults, GSresults,savedir):
     list = ['HMM_sim','HMM_simz','HMMsm_sim','HMMsm_simz','GS_sim','GS_simz']
     res_beh = dict()
     for key in list:
         res_beh[key] = np.ones((HMMresults['bounds_matchk_folds'].shape[0], HMMresults['bounds_matchk_folds'].shape[1],HMMresults['bounds_matchk_folds'].shape[2]))
 
     TR = 2.47
-    onsets = loadmat('/home/lingee/wrkgrp/Cambridge_data/Movie_HMM/Results_method_paper/' + 'subjective_event_onsets.mat')['event_onsets']
+    onsets = loadmat(savedir + 'subjective_event_onsets_revised.mat')['event_onsets']
     onsets = np.round((onsets+5)/TR).astype(int)
     beh = np.zeros((192,1))
     beh[onsets-1]=1

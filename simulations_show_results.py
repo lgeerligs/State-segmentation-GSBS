@@ -302,13 +302,13 @@ for d2, nstates in enumerate(np.array(nstates_list)[1:3], start=1):
     plt.setp(ax, xlim=[0, 60])
     ax.set_title('k = ' + str(nstates_list[d2]))
     ax.plot(np.arange(2, 60), res2['fit_W_mean'][:, d2, 2:60].mean(0), color=pal[6])
-    ax.fill_between(np.arange(2, 60), res2['fit_W_mean'][:,d2,2:60].mean(0)-res2['fit_W_std'][:,d2,2:60].mean(0), res2['fit_W_mean'][:,d2,2:60].mean(0)+res2['fit_W_std'][:,d2,2:60].mean(0), alpha=0.3, color=pal[6])
+    ax.fill_between(np.arange(2, 60), res2['fit_W_mean'][:,d2,2:60].mean(0)-res2['fit_W_mean'][:,d2,2:60].std(0), res2['fit_W_mean'][:,d2,2:60].mean(0)+res2['fit_W_mean'][:,d2,2:60].std(0), alpha=0.3, color=pal[6])
     ax.plot(np.arange(2, 60), res2['fit_Bcon_mean'][:,d2,2:60].mean(0), color=pal[7])
-    ax.fill_between(np.arange(2, 60), res2['fit_Bcon_mean'][:,d2,2:60].mean(0) - res2['fit_Bcon_std'][:,d2,2:60].mean(0),
-                        res2['fit_Bcon_mean'][:,d2,2:60].mean(0) + res2['fit_Bcon_std'][:,d2,2:60].mean(0), alpha=0.3, color=pal[7])
+    ax.fill_between(np.arange(2, 60), res2['fit_Bcon_mean'][:,d2,2:60].mean(0) - res2['fit_Bcon_mean'][:,d2,2:60].std(0),
+                        res2['fit_Bcon_mean'][:,d2,2:60].mean(0) + res2['fit_Bcon_mean'][:,d2,2:60].std(0), alpha=0.3, color=pal[7])
     ax.plot(np.arange(2, 60), res2['fit_Ball_mean'][:,d2,2:60].mean(0), color=pal[8])
-    ax.fill_between(np.arange(2, 60), res2['fit_Ball_mean'][:,d2,2:60].mean(0) - res2['fit_Ball_std'][:,d2,2:60].mean(0),
-                        res2['fit_Ball_mean'][:,d2,2:60].mean(0) + res2['fit_Ball_std'][:,d2,2:60].mean(0), alpha=0.3, color=pal[8])
+    ax.fill_between(np.arange(2, 60), res2['fit_Ball_mean'][:,d2,2:60].mean(0) - res2['fit_Ball_mean'][:,d2,2:60].std(0),
+                        res2['fit_Ball_mean'][:,d2,2:60].mean(0) + res2['fit_Ball_mean'][:,d2,2:60].std(0), alpha=0.3, color=pal[8])
     ax.set_ylabel('Correlation (z)')
     plt.tight_layout()
     plt.legend(['Within', 'Between - con', 'Between-all'])

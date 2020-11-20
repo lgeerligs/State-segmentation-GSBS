@@ -72,7 +72,7 @@ hypISS_results = rda.summarize_results_hypISS(roilist, ISSlist, default_folds, s
 HMMresults = rda.summarize_results_HMM(default_folds, roilist, savedir, False, default_radius, kvals, optimumvals, ISSth=-1)
 HMMresultsCV = rda.summarize_results_HMM(default_folds, roilist, savedir, True, default_radius, kvals, optimumvals, ISSth=-1)
 
-res_beh = rda.relate_events(HMMresults, GSresults)
+res_beh = rda.relate_events(HMMresults, GSresults,savedir)
 # save all results
 with open(savedir + 'GSresults.p', 'wb') as output:
     pickle.dump(GSresults, output, pickle.HIGHEST_PROTOCOL)
@@ -341,7 +341,7 @@ numsubs=np.zeros(len(kfoldlist))
 for kcount, k in enumerate(kfoldlist):
     numsubs[kcount]=265/k
 
-#how does reliability vary with cross validation, radius=8?
+#how does reliability vary with number of subjects averaged, radius=8?
 metric = 'sim'
 pal=seaborn.color_palette("Set2", len(roilist))
 f,ax = plt.subplots(1)
@@ -372,7 +372,7 @@ plt.title('Effect of sphere size on optimal number of units, Kfold' + str(defaul
 plt.savefig(savedir + 'Optimum_spheresize' + format, format=format[1:])
 
 
-#how does optimum vary with cross validation, radius=8?
+#how does optimum vary with number of subjects averaged, radius=8?
 pal=seaborn.color_palette("Set2", len(roilist))
 f,ax = plt.subplots(1)
 for i in range(0,len(roilist)):
@@ -404,13 +404,7 @@ plt.title('Time * time matrix reliability, effect of averaging timeseries or cma
 plt.savefig(savedir + 'reliability_averaging_first_last' + format, format=format[1:])
 
 #compute statistical tests for averagin first or last
-tval = np.zeros((len(roilist)))
 pval = np.zeros((len(roilist)))
-#t-test reliability
 for i in range(0, len(roilist)):
-        tval[i], pval[i] = stats.ttest_rel(np.arctan(rel_avglast[i,:]),np.arctan(rel_avgfirst[i,:]))
-
-
-
-
+        co, pval[i] = stats.wilcoxon(rel_avglast[i,:],rel_avgfirst[i,:])
 
