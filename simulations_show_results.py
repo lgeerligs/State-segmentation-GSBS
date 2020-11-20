@@ -11,6 +11,7 @@ plt.rcParams['ps.fonttype'] = 42
 
 savedir = '/home/lingee/wrkgrp/Cambridge_data/Movie_HMM/simulations/'
 
+#default settings
 nvox = 50
 ntime = 200
 nstates = 15
@@ -20,54 +21,92 @@ sub_std = 0.1
 TR = 2.47
 sub_evprob = 0
 reps = 100
-length_std = 0.5
+length_std = 1
 maxK = 100
 peak_delay = 6
 peak_disp = 1
-extime =2
+extime = 2
 maxK=100
+nstates_max = 100
 
-length_std_list=[0.1, 0.5, 1]
+#lists to loop over for simulations
+length_std_list=[0.1, 1, 2]
 nstates_list=[5,15,30]
-group_std_list=[0.1]
-train  = [1, 5, 10]
+sub_std_list = [1, 5, 10]
 kfold_list = [1, 2, 20]
 sub_evprob_list=[0.1, 0.2, 0.4]
 peak_delay_list=[4, 6, 8]
 peak_disp_list=[0.5, 1, 2]
 CV_list = [True, False]
-nstates_max = 150
 
 #run all the simulations
 sim=Simulations(nvox=nvox, ntime=ntime, nstates=nstates, nsub=nsub, group_std=group_std, TR=TR, sub_evprob=sub_evprob, length_std=length_std,peak_delay=peak_delay,peak_disp=peak_disp, extime=extime, sub_std=sub_std, maxK=maxK)
 
-output_sim1 = Parallel(n_jobs=50)(delayed(sim.run_simulation_evlength)(length_std_list, rep) for rep in range(0, reps))
+#simulation 1, as shown in the paper
+run_HMM=True
+output_sim1 = Parallel(n_jobs=50)(delayed(sim.run_simulation_evlength)(length_std_list, nstates_list,run_HMM, rep) for rep in range(0, reps))
 with open(savedir + 'output_sim1.mat', 'wb') as output:
     pickle.dump({'output_sim1': output_sim1}, output, pickle.HIGHEST_PROTOCOL)
 
-mindist=1
-output_sim2 = Parallel(n_jobs=50)(delayed(sim.run_simulation_compare_fit)(nstates_list,group_std_list, mindist, rep) for rep in range(0,reps))
+# rerun Simulation 1 with a shorter TR, to identify if the finetune_width can be safely set to 1
+run_HMM=False
+output_sim1 = Parallel(n_jobs=50)(delayed(sim.run_simulation_evlength)(length_std_list, nstates_list,run_HMM, rep, TRfactor=0.5, finetune=0) for rep in range(0, reps))
+with open(savedir + 'output_sim1_TR12_FT0.mat', 'wb') as output:
+    pickle.dump({'output_sim1': output_sim1}, output, pickle.HIGHEST_PROTOCOL)
+output_sim1 = Parallel(n_jobs=50)(delayed(sim.run_simulation_evlength)(length_std_list, nstates_list,run_HMM, rep, TRfactor=0.5, finetune=1) for rep in range(0, reps))
+with open(savedir + 'output_sim1_TR12_FT1.mat', 'wb') as output:
+    pickle.dump({'output_sim1': output_sim1}, output, pickle.HIGHEST_PROTOCOL)
+output_sim1 = Parallel(n_jobs=50)(delayed(sim.run_simulation_evlength)(length_std_list, nstates_list,run_HMM, rep, TRfactor=0.5, finetune=-1) for rep in range(0, reps))
+with open(savedir + 'output_sim1_TR12_FT-1.mat', 'wb') as output:
+    pickle.dump({'output_sim1': output_sim1}, output, pickle.HIGHEST_PROTOCOL)
+
+#simulation 2, with z-scoring for LL estimation
+mindist=1; run_HMM=True; finetune=1; zs=True
+output_sim2 = Parallel(n_jobs=50)(delayed(sim.run_simulation_compare_nstates)(nstates_list, mindist, run_HMM,finetune, zs, rep) for rep in range(0,reps))
+with open(savedir + 'output_sim2_HMMzs.mat', 'wb') as output:
+    pickle.dump({'output_sim2_HMMzs': output_sim2}, output, pickle.HIGHEST_PROTOCOL)
+
+#simulation 2, without z-scoring for LL estimation (generated the results shown in the paper)
+mindist=1; run_HMM=True; finetune=1; zs=False
+output_sim2 = Parallel(n_jobs=50)(delayed(sim.run_simulation_compare_nstates)(nstates_list, mindist, run_HMM,finetune, zs, rep) for rep in range(0,reps))
 with open(savedir + 'output_sim2.mat', 'wb') as output:
     pickle.dump({'output_sim2': output_sim2}, output, pickle.HIGHEST_PROTOCOL)
 
-mindist = 5
-output_sim2 = Parallel(n_jobs=50)(delayed(sim.run_simulation_compare_fit)(nstates_list, group_std_list, mindist, rep) for rep in range(0, reps))
+#simulation 2, leaving out TRs around the diagonal (supplementary figure 2).
+mindist = 5; run_HMM=False; finetune=1; zs=False
+output_sim2 = Parallel(n_jobs=50)(delayed(sim.run_simulation_compare_nstates)(nstates_list,  mindist, run_HMM, finetune,zs, rep) for rep in range(0, reps))
 with open(savedir + 'output_sim2_supplementary.mat', 'wb') as output:
     pickle.dump({'output_sim2_supplementary': output_sim2}, output, pickle.HIGHEST_PROTOCOL)
 
-output_sim3 = Parallel(n_jobs=50)(delayed(sim.run_simulation_sub_noise)(CV_list, train, kfold_list, rep) for rep in range(0, reps))
+#simulation 2, test if additional finetuning improves the estimate of the number of states (it does not).
+mindist = 1; run_HMM=False; finetune=-1; zs=False
+output_sim2 = Parallel(n_jobs=50)(delayed(sim.run_simulation_compare_nstates)(nstates_list,  mindist, run_HMM, finetune, zs, rep) for rep in range(0, reps))
+with open(savedir + 'output_sim2_finetuneall.mat', 'wb') as output:
+    pickle.dump({'output_sim2_finetuneall': output_sim2}, output, pickle.HIGHEST_PROTOCOL)
+
+#simulation 3
+nsub=20
+output_sim3 = Parallel(n_jobs=50)(delayed(sim.run_simulation_sub_noise)(CV_list, sub_std_list, kfold_list, nsub, rep) for rep in range(0, reps))
 with open(savedir + 'output_sim3.mat', 'wb') as output:
     pickle.dump({'output_sim3': output_sim3}, output, pickle.HIGHEST_PROTOCOL)
 
-output_sim4 = Parallel(n_jobs=50)(delayed(sim.run_simulation_sub_specific_states)(CV_list, sub_evprob_list, kfold_list, rep) for rep in range(0,reps))
-with open(savedir + 'output_sim4.mat', 'wb') as output:
+#simulation 4 with high noise
+noise=5; nsub=20
+output_sim4 = Parallel(n_jobs=50)(delayed(sim.run_simulation_sub_specific_states)(CV_list, sub_evprob_list, kfold_list, noise, nsub,rep) for rep in range(0,reps))
+with open(savedir + 'output_sim4_high_noise.mat', 'wb') as output:
+    pickle.dump({'output_sim4': output_sim4}, output, pickle.HIGHEST_PROTOCOL)
+
+#simulation 4 with low noise, as reported in the paper
+noise=0.1; nsub=20
+output_sim4 = Parallel(n_jobs=50)(delayed(sim.run_simulation_sub_specific_states)(CV_list, sub_evprob_list, kfold_list, noise, nsub, rep) for rep in range(0,reps))
+with open(savedir + 'output_sim4_low_noise.mat', 'wb') as output:
     pickle.dump({'output_sim4': output_sim4}, output, pickle.HIGHEST_PROTOCOL)
 
 output_sim5 = Parallel(n_jobs=50)(delayed(sim.run_simulation_hrf_shape)(nstates_list, peak_delay_list, peak_disp_list, rep) for rep in range(0,reps))
 with open(savedir + 'output_sim5.mat', 'wb') as output:
     pickle.dump({'output_sim5': output_sim5}, output, pickle.HIGHEST_PROTOCOL)
 
-output_sim6 = Parallel(n_jobs=50)(delayed(sim.run_simulation_computation_time)(nstates_max, rep) for rep in range(0,reps))
+output_sim6 = Parallel(n_jobs=50)(delayed(sim.run_simulation_computation_time)(150, rep) for rep in range(0,reps))
 with open(savedir + 'output_sim6.mat', 'wb') as output:
     pickle.dump({'output_sim6': output_sim6}, output, pickle.HIGHEST_PROTOCOL)
 
@@ -75,100 +114,248 @@ with open(savedir + 'output_sim6.mat', 'wb') as output:
 #show simulation 1
 file = open(savedir + 'output_sim1.mat','rb'); res=pickle.load(file)
 output_sim1=res['output_sim1']
-GS_sim = np.zeros(np.insert(np.asarray(np.shape(output_sim1[1][0])), 0, reps))
-HMM_sim = np.zeros(np.shape(GS_sim))
-X = np.zeros(np.shape(GS_sim))
-GS_bounds = np.zeros(np.insert(np.asarray(np.shape(output_sim1[1][2])), 0, reps))
-HMM_bounds = np.zeros(np.shape(GS_bounds))
-real_bounds = np.zeros(np.shape(GS_bounds))
-for i in np.arange(0,reps):
-    GS_sim[i] = output_sim1[i][0]
-    HMM_sim[i] = output_sim1[i][1]
-    GS_bounds[i] = output_sim1[i][2]
-    HMM_bounds[i] = output_sim1[i][3]
-    real_bounds[i] = output_sim1[i][4]
-    X[i] = length_std_list
+res1=dict()
+for key in output_sim1[0]:
+    res1[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim1[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res1[key][i]=output_sim1[i][key]
 
-pal=seaborn.color_palette("Set2", 2)
-plt.figure()
-plt.rcParams['font.size']=18
-bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten())) , np.concatenate((GS_sim.flatten(), HMM_sim.flatten())),
-                       hue=np.concatenate((np.ones([reps*np.shape(X)[1]]), np.ones([reps*np.shape(X)[1]])*2)), width=0.5,
-                       palette=pal)
-plt.setp(bp, ylim=[0.4, 1.05])
-plt.xlabel('SD of state length')
-plt.ylabel('Boundary accuracy (r)')
-handles, labels=plt.gca().get_legend_handles_labels()
-labels=['GS', 'HMM']
-plt.yticks(np.arange(0.4,1.1,0.2))
-plt.legend(handles, labels, loc='lower left')
-plt.savefig(savedir + 'Simulation1.pdf')
+#boundary accuracy
+X = np.tile(np.expand_dims(np.array(length_std_list), axis=0), (reps, 1))
+pal=seaborn.color_palette("Set2", 3)
+ynames=['Adjusted accuracy', 'Z-scored accuracy']
+plotnames=['Adjusted accuracy', 'Z-scored accuracy']
+for n, nstates in enumerate(np.array(nstates_list)):
+    print(n)
+    for m,metric in enumerate(['sim', 'simz']):
+        plt.figure()
+        plt.rcParams['font.size']=18
+        bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten(),X.flatten())) , np.concatenate((res1[metric + '_GS'][:,:,n].flatten(),
+                                                                                                     res1[metric + '_HMM'][:,:,n].flatten(),
+                                                                                                     res1[metric + '_HMMsplit'][:,:,n].flatten())),
+                               hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]), np.ones([np.shape(X.flatten())[0]])*2, np.ones([np.shape(X.flatten())[0]])*3)), width=0.5,
+                               palette=pal)
+        #plt.setp(bp, ylim=[0.4, 1.05])
+        plt.xlabel('SD of state length')
+        plt.ylabel(ynames[m])
+        plt.title(plotnames[m] + ', k =' + str(nstates))
+        handles, labels=plt.gca().get_legend_handles_labels()
+        labels=['GS', 'HMM', 'HMM_split']
+        #plt.yticks(np.arange(0.4,1.1,0.2))
+        plt.legend(handles, labels, loc='lower left')
+        plt.savefig(savedir + 'Simulation1_split' + metric + str(nstates) +'.pdf')
 
-cat=1
-idx=np.argmin(GS_sim[:,cat])
-print(GS_sim[idx,cat])
-print(HMM_sim[idx,cat])
-plt.figure()
-plt.vlines(np.where(GS_bounds[idx,cat,:]), 0, 1, color=pal[0])
-plt.vlines(np.where(HMM_bounds[idx,cat,:]), 1, 2, color=pal[1])
-plt.vlines(np.where(real_bounds[idx,cat,:]), 0.5, 1.5, color='k')
-plt.axis('off')
-plt.savefig(savedir + 'Simulation1_example_bounds_poorGS.pdf')
+#boundary distance
+pal=seaborn.color_palette("Set2", 3)
+for n, nstates in enumerate(np.array(nstates_list)[1:3], start=1):
 
+    for idxl, l in enumerate(np.array(length_std_list)[1:3], start=1):
+        print(idxl)
+        plt.figure()
+        plt.rcParams['font.size']=18
 
-cat=2
-idx=np.argmin(HMM_sim[:,cat])
-print(GS_sim[idx,cat])
-print(HMM_sim[idx,cat])
-plt.figure()
-plt.vlines(np.where(GS_bounds[idx,cat,:]), 0, 1, color=pal[0])
-plt.vlines(np.where(HMM_bounds[idx,cat,:]), 1, 2, color=pal[1])
-plt.vlines(np.where(real_bounds[idx,cat,:]), 0.5, 1.5, color='k')
-plt.axis('off')
-plt.savefig(savedir + 'Simulation1_example_poorHMM.pdf')
+        y = np.abs(np.concatenate((res1['dists_GS'][:, idxl, n, 0:nstates].flatten(),
+                                res1['dists_HMM'][:, idxl, n, 0:nstates].flatten(),
+                                res1['dists_HMMsplit'][:, idxl, n, 0:nstates].flatten()), axis=0))
+        y[y==0]=np.nan
+        x = np.concatenate((np.ones([np.shape(res1['dists_GS'][:, idxl, n, 0:nstates].flatten())[0]]), np.ones([np.shape(res1['dists_GS'][:, idxl, n, 0:nstates].flatten())[0]]) * 2,
+                                  np.ones([np.shape(res1['dists_GS'][:, idxl, n, 0:nstates].flatten())[0]]) * 3)).astype(int)
+        bp = seaborn.countplot(x=y, hue=x,palette=pal, order=(np.arange(np.nanmin(y), np.nanmax(y)+1,1)).astype(int))
+        #tick=np.sort(np.concatenate((np.arange(1, np.floor((np.nanmin(y)/5))*5-1,-5), np.arange(6, np.ceil((np.nanmax(y)/5)+1)*5,5)),0))
+        #plt.xticks(tick,tick)
 
+        plt.yticks(np.array([0, 0.01, 0.02, 0.03])*nstates*reps, np.array([0, 1, 2, 3]))
+        plt.xlabel('Distance')
+        plt.ylabel('Percentage')
+        handles, labels=plt.gca().get_legend_handles_labels()
+        labels=['GS', 'HMM', 'HMM_split']
+        #plt.yticks(np.arange(0.4,1.1,0.2))
+        plt.legend(handles, labels, loc='upper right')
+        plt.savefig(savedir + 'Simulation1_split_dist_nstate' + str(nstates) + 'len' + str(l) + '.pdf')
 
+#show results for simulation 1 with short TR and varying amounts of finetuning
+file = open(savedir + 'output_sim1_TR12_FT0.mat','rb'); res=pickle.load(file)
+output_sim1=res['output_sim1']
+res1=dict()
+for key in output_sim1[0]:
+    res1[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim1[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res1[key][i]=output_sim1[i][key]
+file = open(savedir + 'output_sim1_TR12_FT1.mat','rb'); res=pickle.load(file)
+output_sim1=res['output_sim1']
+res2=dict()
+for key in output_sim1[0]:
+    res2[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim1[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res2[key][i]=output_sim1[i][key]
+file = open(savedir + 'output_sim1_TR12_FT-1.mat','rb'); res=pickle.load(file)
+output_sim1=res['output_sim1']
+res3=dict()
+for key in output_sim1[0]:
+    res3[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim1[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res3[key][i]=output_sim1[i][key]
 
+#boundary accuracy
+X = np.tile(np.expand_dims(np.array(length_std_list), axis=0), (reps, 1))
+pal=seaborn.color_palette("Set2", 3)
+ynames=['Adjusted accuracy', 'Z-scored accuracy']
+plotnames=['Adjusted accuracy', 'Z-scored accuracy']
+for n, nstates in enumerate(np.array(nstates_list)):
+    print(n)
+    for m,metric in enumerate(['sim', 'simz']):
+        plt.figure()
+        plt.rcParams['font.size']=18
+        bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten(),X.flatten())) , np.concatenate((res1[metric + '_GS'][:,:,n].flatten(),
+                                                                                                     res2[metric + '_GS'][:,:,n].flatten(),
+                                                                                         res3[metric + '_GS'][:,:,n].flatten())),
+                               hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]), np.ones([np.shape(X.flatten())[0]])*2,
+                                                   np.ones([np.shape(X.flatten())[0]])*3)), width=0.5,
+                               palette=pal)
+        #plt.setp(bp, ylim=[0.4, 1.05])
+        plt.xlabel('SD of state length')
+        plt.ylabel(ynames[m])
+        plt.title(plotnames[m] + ', k =' + str(nstates))
+        handles, labels=plt.gca().get_legend_handles_labels()
+        labels=['Finetune - none', 'Finetune - 1TR', 'Finetune - all TRs']
+        #plt.yticks(np.arange(0.4,1.1,0.2))
+        plt.legend(handles, labels, loc='lower left')
+        plt.savefig(savedir + 'Simulation1_supplemenatary_shortTR_finetune' + metric + str(nstates) +'.pdf')
 
 
 #show simulation 2
-name ='_supplementary'#'''#'_supplementary' # or ''
+name =''#_supplementary'#'_finetuneall'#'_HMMzs'
 file = open(savedir + 'output_sim2' + name + '.mat','rb'); res=pickle.load(file)
 output_sim2=res['output_sim2' + name]
-optimum = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][0])), 0, reps))
-optimum_wac = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][1])), 0, reps))
-tdist = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
-wac = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][3])), 0, reps))
-fit_W_mean = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
-fit_W_std = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
-fit_Ball_mean = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
-fit_Ball_std = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
-fit_Bcon_mean = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
-fit_Bcon_std = np.zeros(np.insert(np.asarray(np.shape(output_sim2[1][2])), 0, reps))
+res2=dict()
+for key in output_sim2[0]:
+    res2[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim2[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res2[key][i]=output_sim2[i][key]
 
-X1 = np.zeros([reps, np.shape(output_sim2[1][0])[0]])
-X2 = np.zeros([reps, np.shape(output_sim2[1][0])[1]])
-for i in np.arange(0,reps):
-    optimum[i,:,:] = output_sim2[i][0]
-    optimum_wac[i,:,:] = output_sim2[i][1]
-    tdist[i,:,:] = output_sim2[i][2]
-    wac[i, :, :] = output_sim2[i][3]
-    fit_W_mean[i, :, :] = output_sim2[i][4]
-    fit_W_std[i, :, :] = output_sim2[i][5]
-    fit_Ball_mean[i, :, :] = output_sim2[i][6]
-    fit_Ball_std[i, :, :] = output_sim2[i][7]
-    fit_Bcon_mean[i, :, :] = output_sim2[i][8]
-    fit_Bcon_std[i, :, :] = output_sim2[i][9]
-    X1[i, :] = nstates_list
-    X2[i, :] = group_std_list
+#plot the fit for unknown k
+metric = 'sim'
+pal=seaborn.color_palette("Set2", 8)
+for n, nstates in enumerate(np.array(nstates_list)[0:3], start=0):
+    #X = np.tile(np.expand_dims(np.array(nstates_list[n]), axis=0), (reps, 1))
+    plt.figure()
+    bp = seaborn.boxplot(x=np.concatenate((np.ones([reps,1]),np.ones([reps,1]) * 1, np.ones([reps,1]) * 1,
+                                         np.ones([reps,1]) * 2, np.ones([reps,1]) * 2, np.ones([reps,1]) * 3,
+                                        np.ones([reps,1]) * 3, np.ones([reps,1]) * 3)).flatten(),
+                         y=np.concatenate((res2[metric + '_GS_tdist'][:,n].flatten(), res2[metric + '_HMM_tdist'][:,n].flatten(), res2[metric + '_HMMsplit_tdist'][:,n].flatten(),
+                                         res2[metric + '_HMM_LL'][:,n].flatten(), res2[metric + '_HMMsplit_LL'][:,n].flatten(),
+                                         res2[metric + '_GS_WAC'][:,n].flatten(), res2[metric + '_HMM_WAC'][:,n].flatten(), res2[metric + '_HMMsplit_WAC'][:,n].flatten(),
+                                         )), hue=np.concatenate((np.ones([reps,1]),np.ones([reps,1]) * 2, np.ones([reps,1]) * 3,
+                                         np.ones([reps,1]) * 2, np.ones([reps,1]) * 3, np.ones([reps,1]) * 1,
+                                        np.ones([reps,1]) * 2, np.ones([reps,1]) * 3)).flatten(), width=0.6, palette=pal)
+    handles, labels = plt.gca().get_legend_handles_labels()
+    labels = ['GSBS', 'HMM', 'HMM-s']
+    plt.legend(handles, labels, loc='upper left')
+
+    plt.xticks(np.arange(0,3), ['T-distance', 'LL', 'WAC'])
+    plt.savefig(savedir + 'Simulation2_' + metric + str(nstates) + '.pdf')
+
+
+#plot the number of detected states
+pal=seaborn.color_palette("Set2", 9)
+for n, nstates in enumerate(np.array(nstates_list)[0:3], start=0):
+    #X = np.tile(np.expand_dims(np.array(nstates_list[n]), axis=0), (reps, 1))
+    plt.figure()
+    bp = seaborn.boxplot(x=np.concatenate((np.ones([reps,1])*1,np.ones([reps,1]) * 1, np.ones([reps,1]) * 2,
+                                         np.ones([reps,1]) * 3, np.ones([reps,1]) * 3)).flatten(),
+                         y=np.concatenate((res2['optimum_tdist'][:,n].flatten(), res2['optimum_tdist_HMM'][:,n].flatten(), res2['optimum_LL_HMM'][:,n].flatten(),
+                                         res2['optimum_wac'][:,n].flatten(), res2['optimum_WAC_HMM'][:,n].flatten())),
+                         hue=np.concatenate((np.ones([reps,1]),np.ones([reps,1]) * 2, np.ones([reps,1]) * 2,
+                                         np.ones([reps,1]) * 1, np.ones([reps,1]) * 2)).flatten(), width=0.6, palette=pal)
+    handles, labels = plt.gca().get_legend_handles_labels()
+    labels = ['GSBS', 'HMM']
+    plt.hlines(nstates, -0.2, 2.2, linestyles='dotted')
+    plt.legend(handles, labels, loc='upper left')
+
+    plt.xticks(np.arange(0,3), ['T-distance', 'LL', 'WAC'])
+    plt.savefig(savedir + 'Simulation2_' + 'nstates' + str(nstates) + '.pdf')
+
+#plot the number of detected states for alternative metrics (at reviewer request)
+pal=seaborn.color_palette("Set2", 3)
+plt.rcParams['font.size']=18
+X = np.tile(np.expand_dims(np.array(nstates_list), axis=0), (reps, 1))
+plt.figure()
+bp = seaborn.boxplot(np.concatenate((X.flatten(), X.flatten(), X.flatten())),
+                       np.concatenate((res2['optimum_tdist'][:,:].flatten(), res2['optimum_mdist'][:,:].flatten(), res2['optimum_meddist'][:,:].flatten())), hue=np.concatenate(
+        (np.ones([reps * np.shape(X)[1]]), np.ones([reps * np.shape(X)[1]]) * 2, np.ones([reps * np.shape(X)[1]]) * 3)), width=0.5, palette=pal)
+plt.xlabel('True number of states')
+plt.ylabel('Estimated number of states')
+plt.hlines(30, 1.7, 2.3, linestyles='dotted')
+plt.hlines(15, 0.7, 1.3, linestyles='dotted')
+plt.hlines(5, -0.3, 0.3, linestyles='dotted')
+#plt.axis([-0.3, 2.3, 0 ,45])
+handles, labels=plt.gca().get_legend_handles_labels()
+labels=['T-distance', 'Mean', 'Median']
+plt.legend(handles, labels, loc='upper left')
+plt.tight_layout()
+plt.savefig(savedir + 'Simulation2_metrics_4reviewer.png')
+
+#make the line fit curves
+for d2, nstates in enumerate(np.array(nstates_list)[1:3], start=1):
+
+    f,ax=plt.subplots(1,1)
+    plt.setp(ax, xlim=[0, 60])
+    ax.set_title('k = ' + str(nstates_list[d2]))
+    ax.plot(np.arange(2, 60), res2['fit_W_mean'][:, d2, 2:60].mean(0), color=pal[6])
+    ax.fill_between(np.arange(2, 60), res2['fit_W_mean'][:,d2,2:60].mean(0)-res2['fit_W_std'][:,d2,2:60].mean(0), res2['fit_W_mean'][:,d2,2:60].mean(0)+res2['fit_W_std'][:,d2,2:60].mean(0), alpha=0.3, color=pal[6])
+    ax.plot(np.arange(2, 60), res2['fit_Bcon_mean'][:,d2,2:60].mean(0), color=pal[7])
+    ax.fill_between(np.arange(2, 60), res2['fit_Bcon_mean'][:,d2,2:60].mean(0) - res2['fit_Bcon_std'][:,d2,2:60].mean(0),
+                        res2['fit_Bcon_mean'][:,d2,2:60].mean(0) + res2['fit_Bcon_std'][:,d2,2:60].mean(0), alpha=0.3, color=pal[7])
+    ax.plot(np.arange(2, 60), res2['fit_Ball_mean'][:,d2,2:60].mean(0), color=pal[8])
+    ax.fill_between(np.arange(2, 60), res2['fit_Ball_mean'][:,d2,2:60].mean(0) - res2['fit_Ball_std'][:,d2,2:60].mean(0),
+                        res2['fit_Ball_mean'][:,d2,2:60].mean(0) + res2['fit_Ball_std'][:,d2,2:60].mean(0), alpha=0.3, color=pal[8])
+    ax.set_ylabel('Correlation (z)')
+    plt.tight_layout()
+    plt.legend(['Within', 'Between - con', 'Between-all'])
+    plt.savefig(savedir + 'Simulation2_fitlines_components_GSBS_k' + str(nstates) + '.pdf')
+
+for d2, nstates in enumerate(np.array(nstates_list)[1:3], start=1):
+
+    f,ax=plt.subplots(3,1)
+    plt.setp(ax, xlim=[0, 60])
+    ax[0].set_title('Tdist')
+    ax[0].plot(np.arange(2, 60), res2['tdist'][:, d2, 2:60].mean(0), color=pal[0])
+    ax[0].fill_between(np.arange(2, 60), res2['tdist'][:, d2, 2:60].mean(0) - res2['tdist'][:, d2, 2:60].std(0),
+                    res2['tdist'][:, d2, 2:60].mean(0) + res2['tdist'][:, d2, 2:60].std(0), alpha=0.3, color=pal[0])
+    ax[0].plot(np.arange(2, 60), res2['tdist_HMM'][:, d2, 2:60].mean(0), color=pal[1])
+    ax[0].fill_between(np.arange(2, 60), res2['tdist_HMM'][:, d2, 2:60].mean(0) - res2['tdist_HMM'][:, d2, 2:60].std(0),
+                    res2['tdist_HMM'][:, d2, 2:60].mean(0) + res2['tdist_HMM'][:, d2, 2:60].std(0), alpha=0.3, color=pal[1])
+    ax[1].set_title('LL - HMM')
+    ax[1].plot(np.arange(2, 60), res2['LL_HMM'][:, d2, 2:60].mean(0), color=pal[1])
+    ax[1].fill_between(np.arange(2, 60), res2['LL_HMM'][:, d2, 2:60].mean(0) - res2['LL_HMM'][:, d2, 2:60].std(0),
+                    res2['LL_HMM'][:, d2, 2:60].mean(0) + res2['LL_HMM'][:, d2, 2:60].std(0), alpha=0.3, color=pal[1])
+    ax[2].set_title('WAC')
+    ax[2].plot(np.arange(2, 60), res2['wac'][:, d2, 2:60].mean(0), color=pal[0])
+    ax[2].fill_between(np.arange(2, 60), res2['wac'][:, d2, 2:60].mean(0) - res2['wac'][:, d2, 2:60].std(0),
+                    res2['wac'][:, d2, 2:60].mean(0) + res2['wac'][:, d2, 2:60].std(0), alpha=0.3, color=pal[0])
+    ax[2].plot(np.arange(2, 60), res2['WAC_HMM'][:, d2, 2:60].mean(0), color=pal[1])
+    ax[2].fill_between(np.arange(2, 60), res2['WAC_HMM'][:, d2, 2:60].mean(0) - res2['WAC_HMM'][:, d2, 2:60].std(0),
+                    res2['WAC_HMM'][:, d2, 2:60].mean(0) + res2['WAC_HMM'][:, d2, 2:60].std(0), alpha=0.3, color=pal[1])
+    plt.tight_layout()
+    plt.savefig(savedir + 'Simulation2_fitlines_all5_k' + str(nstates) + '.pdf')
+
+#show simulation 2 - supplementary results, ignoring 4 TRs around diagonal - all values of K in one plot
+name ='_supplementary'
+file = open(savedir + 'output_sim2' + name + '.mat','rb'); res=pickle.load(file)
+output_sim2=res['output_sim2' + name]
+res2=dict()
+for key in output_sim2[0]:
+    res2[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim2[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res2[key][i]=output_sim2[i][key]
 
 pal=seaborn.color_palette("Set2", 2)
 plt.rcParams['font.size']=18
-for j in np.arange(0, len(group_std_list)):
-    plt.figure()
-    bp = seaborn.boxplot(np.concatenate((X1.flatten(), X1.flatten())),
-                           np.concatenate((optimum[:,:,j].flatten(), optimum_wac[:,:,j].flatten())), hue=np.concatenate(
-            (np.ones([reps * np.shape(X1)[1]]), np.ones([reps * np.shape(X1)[1]]) * 2)), width=0.5, palette=pal)
+X = np.tile(np.expand_dims(np.array(nstates_list), axis=0), (reps, 1))
+plt.figure()
+bp = seaborn.boxplot(np.concatenate((X.flatten(), X.flatten())),
+                       np.concatenate((res2['optimum_tdist'][:,:].flatten(), res2['optimum_wac'][:,:].flatten())), hue=np.concatenate(
+        (np.ones([reps * np.shape(X)[1]]), np.ones([reps * np.shape(X)[1]]) * 2)), width=0.5, palette=pal)
 plt.xlabel('True number of states')
 plt.ylabel('Estimated number of states')
 plt.hlines(30, 1.7, 2.3, linestyles='dotted')
@@ -181,188 +368,115 @@ labels=['T-distance', 'wac']
 plt.legend(handles, labels, loc='upper left')
 plt.savefig(savedir + 'Simulation2' + name + '.pdf')
 
-#make the tdist line plots
-#dim 1 = nstates
-#dim 2 = group_std
-plt.rcParams['font.size']=14
-pal=seaborn.color_palette("Set2", 6)
-f,ax=plt.subplots(3,1)
-plt.setp(ax, yticks=[0,2,4], xlim=[0, 60])
-d1=0
-for d2 in np.arange(0,3,1):
-    ax[d2].set_title('k = ' + str(nstates_list[d2]))
-    ax[d2].plot(np.arange(0, maxK + 1), fit_W_mean[:, d2, d1, :].mean(0), color=pal[2])
-    ax[d2].fill_between(np.arange(0, maxK+1), fit_W_mean[:,d2,d1,:].mean(0)-fit_W_std[:,d2,d1,:].mean(0), fit_W_mean[:,d2,d1,:].mean(0)+fit_W_std[:,d2,d1,:].mean(0), alpha=0.3, color=pal[2])
-    ax[d2].plot(np.arange(0, maxK + 1), fit_Ball_mean[:, d2, d1, :].mean(0), color=pal[4])
-    ax[d2].fill_between(np.arange(0, maxK + 1), fit_Ball_mean[:, d2, d1, :].mean(0) - fit_Ball_std[:, d2, d1, :].mean(0),
-                        fit_Ball_mean[:, d2, d1, :].mean(0) + fit_Ball_std[:, d2, d1, :].mean(0), alpha=0.3, color=pal[4])
-    ax[d2].plot(wac[:, d2, d1, :].mean(0), color=pal[1])
-    ax[d2].set_ylabel('Correlation (z)')
-plt.legend(['Within', 'Between - all', 'wac'])
-plt.tight_layout()
-plt.savefig(savedir + 'Simulation2_fitlines_wac' + name + '.pdf')
-
-f,ax=plt.subplots(3,1)
-plt.setp(ax, yticks=[0,2,4], xlim=[0, 60])
-d1=0
-for d2 in np.arange(0,3,1):
-    ax[d2].set_title('k = ' + str(nstates_list[d2]))
-    ax[d2].plot(np.arange(0, maxK + 1), fit_W_mean[:, d2, d1, :].mean(0), color=pal[2])
-    ax[d2].fill_between(np.arange(0, maxK+1), fit_W_mean[:,d2,d1,:].mean(0)-fit_W_std[:,d2,d1,:].mean(0), fit_W_mean[:,d2,d1,:].mean(0)+fit_W_std[:,d2,d1,:].mean(0), alpha=0.3, color=pal[2])
-    ax[d2].plot(np.arange(0, maxK + 1), fit_Bcon_mean[:, d2, d1, :].mean(0), color=pal[3])
-    ax[d2].fill_between(np.arange(0, maxK + 1), fit_Bcon_mean[:, d2, d1, :].mean(0) - fit_Bcon_std[:, d2, d1, :].mean(0),
-                        fit_Bcon_mean[:, d2, d1, :].mean(0) + fit_Bcon_std[:, d2, d1, :].mean(0), alpha=0.3, color=pal[3])
-    ax2 = ax[d2].twinx()
-    ax2.plot(tdist[:, d2, d1, :].mean(0), color=pal[0])
-    ax[d2].set_ylabel('Correlation (z)')
-    ax2.set_ylabel('T-value')
-plt.tight_layout()
-plt.legend(['Within', 'Between - con', 'T-distance'])
-plt.savefig(savedir + 'Simulation2_fitlines_Tdist' + name + '.pdf')
-
-
-
 ## show simulation 3
 file = open(savedir + 'output_sim3.mat','rb'); res=pickle.load(file)
 output_sim3=res['output_sim3']
+res3=dict()
+for key in output_sim3[0]:
+    res3[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim3[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res3[key][i]=output_sim3[i][key]
 
-optimum_wac = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][0])), 0, reps))
-optimum = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][1])), 0, reps))
-GS_sim = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][2])), 0, reps))
-GS_sim_fixK = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][3])), 0, reps))
-tdist = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][4])), 0, reps))
-wac = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][5])), 0, reps))
-
-X1 = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][0])), 0, reps))
-X2 = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][0])), 0, reps))
-X3 = np.zeros(np.insert(np.asarray(np.shape(output_sim3[1][0])), 0, reps))
-for i in np.arange(0,reps):
-    optimum_wac[i,:,:] = output_sim3[i][0]
-    optimum[i,:,:] = output_sim3[i][1]
-    GS_sim[i, :, :] = output_sim3[i][2]
-    GS_sim_fixK[i, :, :] = output_sim3[i][3]
-    tdist[i,:,:] = output_sim3[i][4]
-    wac[i, :, :] = output_sim3[i][5]
-    for j in range(0, len(CV_list)):
-        X1[i, j, :, :] = CV_list[j]
-    for j in range(0, len(train)):
-        X2[i, :, j, :] = train[j]
-    for j in range(0, len(kfold_list)):
-        X3[i, :, :, j] = kfold_list[j]
-
-
-
-CV_listd = np.double(X1)
-f=plt.figure()
-X=X2.flatten()
-Y=optimum.flatten()
-cat=X3.flatten()-(CV_listd.flatten()*0.5)
-Y1=np.copy(Y)
-#Y1[(X>4)&(cat>19.6)]=25
-Y1[(X>6)&(cat>19)]=29
+#number of states
+X = np.tile(np.expand_dims(np.array(sub_std_list), axis=0), (reps, 1))
 pal=seaborn.color_palette("Set2", 5)
-mypal ={1:pal[0], 1.5:pal[1], 2:pal[2],19.5:pal[3], 20:pal[4]}
-bp = seaborn.boxplot(X[cat!=0.5],Y1[cat!=0.5] , hue=cat[cat!=0.5], width=0.7, palette=mypal)
-plt.setp(bp,yticks=np.arange(0,30,5), ylim=[5, 30], xlim=[-0.5,2.5])
-plt.hlines(nstates, -0.3, 2.3, linestyles='dotted')
+plt.figure()
+plt.rcParams['font.size']=18
+metric='optimum'
+#remove values >26 to improve plot visibility
+#only the categories with means higher than 26 contain the values 26 or higher
+res3[metric][res3[metric][:]>26]=26
+bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten(),X.flatten(),X.flatten(),X.flatten())) , np.concatenate((res3[metric][:,1,:,0].flatten(),
+                                                                                             res3[metric][:,0,:,1].flatten(),
+                                                                                             res3[metric][:,1,:,1].flatten(),
+                                                                                             res3[metric][:,0,:,2].flatten(),
+                                                                                             res3[metric][:,1,:,2].flatten())),
+                       hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]), np.ones([np.shape(X.flatten())[0]])*2, np.ones([np.shape(X.flatten())[0]])*3
+                                           , np.ones([np.shape(X.flatten())[0]])*4, np.ones([np.shape(X.flatten())[0]])*5)), width=0.6,palette=pal)
+#plt.setp(bp, ylim=[0.4, 1.05])
+plt.xlabel('Noise SD')
+plt.ylabel('Estimated number of states')
+plt.hlines(15, -0.3, 2.3, linestyles='dotted')
+plt.title('Estimated number of states' + ', k = 15')
 handles, labels=plt.gca().get_legend_handles_labels()
 labels=['avg all', '2-fold CV', 'avg half', 'LOO CV', 'no avg or CV']
+#plt.yticks(np.arange(0.4,1.1,0.2))
 plt.legend(handles, labels, loc='upper left')
 plt.savefig(savedir + 'Simulation3_estimateK.pdf')
 
-plt.figure()
-X=X2[:,1,:,:].flatten()
-Y=GS_sim_fixK[:,1,:,:].flatten()
-cat=X3[:,1,:,:].flatten()
-bp = seaborn.boxplot(X, Y , hue=cat, width=0.5, palette=mypal)
-plt.setp(bp, ylim=[-0.05, 1])
-handles, labels=plt.gca().get_legend_handles_labels()
-labels=['avg all', 'avg half', 'no avg']
-plt.legend(handles, labels, loc='lower left')
-plt.savefig(savedir + 'Simulation3_estimatebounds.pdf')
-
-
-
-#plot the tdist lines
+#accuracy
+X = np.tile(np.expand_dims(np.array(sub_std_list), axis=0), (reps, 1))
 pal=seaborn.color_palette("Set2", 5)
-mypal ={1:pal[0], 1.5:pal[1], 2:pal[2],19.5:pal[3], 20:pal[4]}
-cat=X3.flatten()-(CV_listd.flatten()*0.5)
-X=X2.flatten()
-Y=tdist.reshape(-1,101)
-f,ax=plt.subplots(3,1)
-plt.setp(ax, xlim=[0, 70])
-vals=np.unique(cat)
-valsX=np.unique(X)
-for d1,xval in enumerate(valsX):
-    for d2,type in enumerate(vals):
-        if type>0.5:
-           inds=np.argwhere((cat==type)&(X==xval))
-           ax[d1].set_title('Noise SD = ' + str(xval))
-           ax[d1].plot(np.arange(0, maxK + 1),np.squeeze(Y[inds, :].mean(0)), color=mypal[type])
-           ax[d1].set_ylabel('T-value')
-           bottom, top = ax[d1].get_ylim()
-           ax[d1].vlines(nstates, 0, top, linestyles='dotted')
-plt.tight_layout()
-plt.savefig(savedir + 'Simulation3_fitlines.pdf')
-
-
+plt.figure()
+plt.rcParams['font.size']=18
+metric='sim_GS_fixK'
+bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten(),X.flatten())) , np.concatenate((res3[metric][:,1,:,0].flatten(),
+                                                                                             res3[metric][:,1,:,1].flatten(),
+                                                                                             res3[metric][:,1,:,2].flatten())),
+                       hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]),  np.ones([np.shape(X.flatten())[0]])*3
+                                           , np.ones([np.shape(X.flatten())[0]])*5)), width=0.5,palette=[pal[0], pal[2], pal[4]])
+#plt.setp(bp, ylim=[0.4, 1.05])
+plt.xlabel('Noise SD')
+plt.ylabel('Adjusted accuracy')
+plt.title('Adjusted accuracy' + ', k = 15')
+handles, labels=plt.gca().get_legend_handles_labels()
+labels=['avg all',  'avg half', 'no avg or CV']
+#plt.yticks(np.arange(0.4,1.1,0.2))
+plt.legend(handles, labels, loc='lower left')
+plt.savefig(savedir + 'Simulation3_accuracy.pdf')
 
 
 
 # show simulation 4
-file = open(savedir + 'output_sim4.mat','rb'); res=pickle.load(file)
+file = open(savedir + 'output_sim4_low_noise.mat','rb'); res=pickle.load(file)
 output_sim4=res['output_sim4']
+res4=dict()
+for key in output_sim4[0]:
+    res4[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim4[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res4[key][i]=output_sim4[i][key]
 
-optimum_wac = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][0])), 0, reps))
-optimum = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][1])), 0, reps))
-GS_sim = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][2])), 0, reps))
-GS_sim_fixK = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][3])), 0, reps))
-tdist = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][4])), 0, reps))
-wac = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][5])), 0, reps))
-
-X1 = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][0])), 0, reps))
-X2 = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][0])), 0, reps))
-X3 = np.zeros(np.insert(np.asarray(np.shape(output_sim4[1][0])), 0, reps))
-for i in np.arange(0,reps):
-    optimum_wac[i,:,:] = output_sim4[i][0]
-    optimum[i,:,:] = output_sim4[i][1]
-    GS_sim[i, :, :] = output_sim4[i][2]
-    GS_sim_fixK[i, :, :] = output_sim4[i][3]
-    tdist[i,:,:] = output_sim4[i][4]
-    wac[i, :, :] = output_sim4[i][5]
-    for j in range(0, len(CV_list)):
-        X1[i, j, :, :] = CV_list[j]
-    for j in range(0, len(sub_evprob_list)):
-        X2[i, :, j, :] = sub_evprob_list[j]
-    for j in range(0, len(kfold_list)):
-        X3[i, :, :, j] = kfold_list[j]
-
-V_listd = np.double(X1)
-f=plt.figure()
-X=X2.flatten()
-Y=optimum.flatten()
-cat=X3.flatten()-(CV_listd.flatten()*0.5)
-Y1=np.copy(Y)
+#number of states
+X = np.tile(np.expand_dims(np.array(sub_evprob_list), axis=0), (reps, 1))
 pal=seaborn.color_palette("Set2", 5)
-mypal ={1:pal[0], 1.5:pal[1], 2:pal[2],19.5:pal[3], 20:pal[4]}
-bp = seaborn.boxplot(X[cat!=0.5],Y1[cat!=0.5] , hue=cat[cat!=0.5], width=0.7, palette=mypal)
-plt.setp(bp,yticks=np.arange(0,30,5), ylim=[3, 20], xlim=[-0.5,2.5])
-plt.hlines(nstates, -0.3, 2.3, linestyles='dotted')
+plt.figure()
+plt.rcParams['font.size']=18
+metric='optimum'
+bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten(),X.flatten(),X.flatten())) , np.concatenate((res4[metric][:,1,:,0].flatten(),
+                                                                                             res4[metric][:,0,:,1].flatten(),
+                                                                                             res4[metric][:,1,:,1].flatten(),
+                                                                                             res4[metric][:,0,:,2].flatten())),
+                       hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]), np.ones([np.shape(X.flatten())[0]])*2, np.ones([np.shape(X.flatten())[0]])*3
+                                           , np.ones([np.shape(X.flatten())[0]])*4)), width=0.5,palette=pal)
+plt.xlabel('Proportion of unique states')
+plt.ylabel('Estimated number of states')
+plt.hlines(15, -0.3, 2.3, linestyles='dotted')
+plt.title('Estimated number of states' + ', k = 15')
 handles, labels=plt.gca().get_legend_handles_labels()
-labels=['avg all', '2-fold CV', 'avg half', 'LOO CV', 'no avg or CV']
-plt.legend(handles, labels, loc='lower left')
+labels=['avg all', '2-fold CV', 'avg half', 'LOO CV']
+#plt.yticks(np.arange(0.4,1.1,0.2))
+plt.legend(handles, labels, loc='upper left')
 plt.savefig(savedir + 'Simulation4_estimateK.pdf')
 
+#accuracy
+X = np.tile(np.expand_dims(np.array(sub_evprob_list), axis=0), (reps, 1))
+pal=seaborn.color_palette("Set2", 5)
 plt.figure()
-X=X2[:,1,:,:].flatten()
-Y=GS_sim_fixK[:,1,:,:].flatten()
-cat=X3[:,1,:,:].flatten()
-bp = seaborn.boxplot(X, Y , hue=cat, width=0.5, palette=mypal)
-plt.setp(bp, ylim=[0.35, 1])
+plt.rcParams['font.size']=18
+metric='sim_GS_fixK'
+#indices order = rep, CV(yes,no), sub_std, kfold
+bp = seaborn.boxplot(np.concatenate((X.flatten(),X.flatten())), np.concatenate((res4[metric][:,1,:,0].flatten(),
+                                                                                res4[metric][:,1,:,1].flatten())),
+                       hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]),  np.ones([np.shape(X.flatten())[0]])*3)), width=0.5,palette=[pal[0], pal[2]])
+#plt.setp(bp, ylim=[0.4, 1.05])
+plt.xlabel('Proportion of unique states')
+plt.ylabel('Adjusted accuracy')
+plt.title('Adjusted accuracy' + ', k = 15')
 handles, labels=plt.gca().get_legend_handles_labels()
-labels=['avg all', 'avg half', 'no avg']
+labels=['avg all',  'avg half']
+#plt.yticks(np.arange(0.4,1.1,0.2))
 plt.legend(handles, labels, loc='lower left')
-plt.savefig(savedir + 'Simulation4_estimatebounds.pdf')
+plt.savefig(savedir + 'Simulation4_accuracy.pdf')
 
 
 
@@ -370,34 +484,21 @@ plt.savefig(savedir + 'Simulation4_estimatebounds.pdf')
 # show simulation 5
 file = open(savedir + 'output_sim5.mat','rb'); res=pickle.load(file)
 output_sim5=res['output_sim5']
+res5=dict()
+for key in output_sim5[0]:
+    res5[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim5[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res5[key][i]=output_sim5[i][key]
 
-GS_sim = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][0])), 0, reps))
-GS_sim_fixK = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][1])), 0, reps))
-HMM_sim = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][2])), 0, reps))
-optimum = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][3])), 0, reps))
 
-X1 = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][0])), 0, reps))
-X2 = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][0])), 0, reps))
-X3 = np.zeros(np.insert(np.asarray(np.shape(output_sim5[1][0])), 0, reps))
-
-for i in np.arange(0,reps):
-    GS_sim[i,:,:] = output_sim5[i][0]
-    GS_sim_fixK[i,:,:] = output_sim5[i][1]
-    HMM_sim[i, :, :] = output_sim5[i][2]
-    optimum[i, :, :] = output_sim5[i][3]
-
-    for j in range(0, len(nstates_list)):
-        X1[i, j, :, :] = nstates_list[j]
-    for j in range(0, len(peak_delay_list)):
-        X2[i, :, j, :] = peak_delay_list[j]
-    for j in range(0, len(peak_disp_list)):
-        X3[i, :, :, j] = peak_disp_list[j]
+X = np.tile(np.expand_dims(np.array(peak_delay_list), axis=0), (reps, 1))
 
 pal=seaborn.color_palette("Set2", 5)
 mypal ={0.5:pal[0], 1:pal[2], 2:pal[4]}
 for j in range(0, len(nstates_list)):
     plt.figure()
-    bp = seaborn.boxplot(X2[:,j,:,:].flatten(), optimum[:,j,:,:].flatten(), hue=X3[:,j,:,:].flatten(), width=0.6, palette=mypal)
+    bp = seaborn.boxplot(x=np.concatenate((X.flatten(),X.flatten(),X.flatten())), y=res5['optimum'][:,j,:,:].flatten(),
+                         hue=np.concatenate((np.ones([np.shape(X.flatten())[0]]), np.ones([np.shape(X.flatten())[0]])*2, np.ones([np.shape(X.flatten())[0]])*3)), width=0.6, palette=pal)
     bottom, top = bp.get_ylim()
     plt.setp(bp, yticks=np.arange(0, 50, 2), ylim=[bottom, top])
     plt.title('K-estimation  - nstates = ' + str(nstates_list[j]))
@@ -411,46 +512,44 @@ for j in range(0, len(nstates_list)):
 # show simulation 6
 file = open(savedir + 'output_sim6.mat','rb'); res=pickle.load(file)
 output_sim6=res['output_sim6']
+res6=dict()
+for key in output_sim6[0]:
+    res6[key] = np.zeros(np.insert(np.asarray(np.shape(output_sim6[0][key])), 0, reps))
+    for i in np.arange(0, reps):
+        res6[key][i]=output_sim6[i][key]
 
-duration_GSBS = np.zeros(np.insert(np.asarray(np.shape(output_sim6[1][0])), 0, reps))
-duration_HMM_fixK = np.zeros(np.insert(np.asarray(np.shape(output_sim6[1][1])), 0, reps))
-duration_HMM_estK = np.zeros(np.insert(np.asarray(np.shape(output_sim6[1][2])), 0, reps))
-for i in np.arange(0,reps):
-    duration_GSBS[i,:] = output_sim6[i][0]
-    duration_HMM_fixK[i,:] = output_sim6[i][1]
-    duration_HMM_estK[i, :] = output_sim6[i][2]
-
-#15 fold cross validation, how does optimum vary with sphere size
 pal=seaborn.color_palette("Set2", 3)
 plt.figure()
-for i in np.arange(0,2):
+for i in np.arange(0,3):
     if i==0:
-        X=duration_GSBS/60
+        X=res6['duration_GSBS']/60
     elif i==1:
-        X = duration_HMM_fixK/60
-#    elif i==2:
-#        X = duration_HMM_estK
-    plt.plot(np.arange(0,nstates_max),np.mean(X,0),color=pal[i], linestyle='--', marker='o')
-    plt.fill_between(x=np.arange(0,nstates_max),y1=np.mean(X,0)-(np.std(X,0)/np.sqrt(reps)),y2=np.mean(X,0)+(np.std(X,0)/np.sqrt(reps)), facecolor=pal[i], alpha=0.5)
+        X = res6['duration_HMM_fixK']/60
+    elif i==2:
+        X = res6['duration_HMMsm_fixK']/60
+    plt.plot(np.arange(0,150),np.mean(X,0),color=pal[i], linestyle='--', marker='o')
+    plt.fill_between(x=np.arange(0,150),y1=np.mean(X,0)-(np.std(X,0)/np.sqrt(reps)),y2=np.mean(X,0)+(np.std(X,0)/np.sqrt(reps)), facecolor=pal[i], alpha=0.5)
 
 plt.xlabel('Number of states (k)')
 plt.ylabel('Time (minutes)')
-plt.legend(loc='upper left', labels=['GSBS', 'HMM'])
+plt.legend(loc='upper left', labels=['GSBS', 'HMM', 'HMMsm'])
 plt.title('Effect of boundary detection method on computational time (fixed k)')
 plt.savefig(savedir + 'Simulation6_computation_time_fixedK.pdf')
 
 pal=seaborn.color_palette("Set2", 3)
 plt.figure()
-for i in np.arange(0,2):
+for i in np.arange(0,3):
     if i==0:
-        X=duration_GSBS/60/60
+        X=res6['duration_GSBS']/60/60
     elif i==1:
-        X = duration_HMM_estK/60/60
-    plt.plot(np.arange(0,nstates_max),np.mean(X,0),color=pal[i], linestyle='--', marker='o')
-    plt.fill_between(x=np.arange(0,nstates_max),y1=np.mean(X,0)-(np.std(X,0)/np.sqrt(reps)),y2=np.mean(X,0)+(np.std(X,0)/np.sqrt(reps)), facecolor=pal[i], alpha=0.5)
+        X = res6['duration_HMM_estK']/60/60
+    elif i == 2:
+        X = res6['duration_HMMsm_estK'] / 60 / 60
+    plt.plot(np.arange(0,150),np.mean(X,0),color=pal[i], linestyle='--', marker='o')
+    plt.fill_between(x=np.arange(0,150),y1=np.mean(X,0)-(np.std(X,0)/np.sqrt(reps)),y2=np.mean(X,0)+(np.std(X,0)/np.sqrt(reps)), facecolor=pal[i], alpha=0.5)
 
 plt.xlabel('Number of states (k)')
 plt.ylabel('Time (hours)')
-plt.legend(loc='upper left', labels=['GSBS', 'HMM'])
+plt.legend(loc='upper left', labels=['GSBS', 'HMM', 'HMMsm'])
 plt.title('Effect of boundary detection method on computational time (estimate k)')
 plt.savefig(savedir + 'Simulation6_computation_time_estK.pdf')
